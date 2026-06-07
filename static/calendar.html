@@ -67,7 +67,7 @@
         <!-- Tab Bar (Sticky) -->
         <div class="border-t border-slate-800 bg-slate-950/95 backdrop-blur-md">
             <div class="container mx-auto px-6 py-3">
-                <div class="flex overflow-x-auto no-scrollbar gap-2" id="day-tabs">
+                <div class="flex overflow-x-auto no-scrollbar gap-2 flex-nowrap" id="day-tabs">
                     <!-- Tabs will be rendered here -->
                 </div>
             </div>
@@ -80,6 +80,7 @@
             <h1 class="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-br from-white to-slate-400 text-transparent bg-clip-text">
                 Currently Airing
             </h1>
+            <p id="hero-date" class="text-slate-400 text-sm mb-1"></p>
             <p class="text-lg text-slate-400 max-w-2xl mx-auto mb-6">
                 Live drama schedule from MyDramaList — updated on page load
             </p>
@@ -124,6 +125,28 @@
         let calendarData = null;
         let currentDay = new Date().toLocaleDateString('en-US', { weekday: 'long' });
 
+        function getWeekDates() {
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const today = new Date();
+            const todayIndex = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+            // Build a map: day name → { date: Date object, dateNum: "07", monthShort: "Jun" }
+            const result = {};
+            days.forEach((dayName, i) => {
+                const diff = i - todayIndex;
+                const d = new Date(today);
+                d.setDate(today.getDate() + diff);
+                result[dayName] = {
+                    dateNum: String(d.getDate()).padStart(2, '0'),
+                    monthShort: d.toLocaleDateString('en-US', { month: 'short' }),
+                    fullDate: d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                };
+            });
+            return result;
+        }
+        
+        const weekDates = getWeekDates();
+
         function upgradeImageUrl(url) {
             if (!url) return '';
             // Replace known thumbnail suffixes with the full-size variant
@@ -141,6 +164,12 @@
         const emptyMessage = document.getElementById('empty-message');
         const errorBanner = document.getElementById('error-banner');
         const totalBadge = document.getElementById('total-badge');
+        
+        const heroDate = document.getElementById('hero-date');
+        if (heroDate) {
+            const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            heroDate.textContent = todayLabel;
+        }
 
         function initSkeletons() {
             skeletonGrid.innerHTML = Array(10).fill().map(() => `
@@ -158,18 +187,32 @@
         function renderTabs() {
             tabsContainer.innerHTML = DAYS.map(day => {
                 const isActive = day === currentDay;
-                const classes = isActive 
-                    ? "bg-cyan-500 text-white font-medium shadow-lg shadow-cyan-500/20" 
-                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 font-medium transition-colors";
-                    
-                return `
-                    <button 
-                        onclick="switchDay('${day}')"
-                        class="px-5 py-2 rounded-full whitespace-nowrap text-sm focus:outline-none ${classes}"
-                    >
-                        ${day}
-                    </button>
-                `;
+                const dayInfo = weekDates[day];
+                const dayShort = day.substring(0, 3).toUpperCase();
+                
+                if (isActive) {
+                    return `
+                        <button 
+                            onclick="switchDay('${day}')"
+                            class="min-w-[80px] px-4 py-3 rounded-xl flex flex-col items-center justify-center focus:outline-none transition-colors bg-cyan-500 text-white shadow-lg shadow-cyan-500/20"
+                        >
+                            <span class="text-xs font-semibold tracking-widest uppercase">${dayShort}</span>
+                            <span class="text-2xl font-bold">${dayInfo.dateNum}</span>
+                            <span class="text-xs">${dayInfo.monthShort}</span>
+                        </button>
+                    `;
+                } else {
+                    return `
+                        <button 
+                            onclick="switchDay('${day}')"
+                            class="min-w-[80px] px-4 py-3 rounded-xl flex flex-col items-center justify-center focus:outline-none transition-colors bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        >
+                            <span class="text-xs font-semibold tracking-widest uppercase text-slate-400">${dayShort}</span>
+                            <span class="text-2xl font-bold text-white">${dayInfo.dateNum}</span>
+                            <span class="text-xs text-slate-400">${dayInfo.monthShort}</span>
+                        </button>
+                    `;
+                }
             }).join('');
             
             // Scroll active tab into view on mobile
