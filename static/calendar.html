@@ -21,6 +21,29 @@
         /* Hide scrollbar for tabs but keep functionality */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .drama-poster-container {
+            position: relative;
+            width: 100%;
+            padding-top: 150%; /* 2:3 aspect ratio — standard drama poster */
+            overflow: hidden;
+            background: #1e293b;
+        }
+
+        .drama-poster-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center top; /* bias toward faces/top of poster */
+            transition: transform 0.5s ease;
+        }
+
+        .drama-card:hover .drama-poster-container img {
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body class="text-slate-300">
@@ -100,6 +123,15 @@
         const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
         let calendarData = null;
         let currentDay = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+
+        function upgradeImageUrl(url) {
+            if (!url) return '';
+            // Replace known thumbnail suffixes with the full-size variant
+            return url.replace(/_4t\.jpg/, '_4f.jpg')
+                      .replace(/_4s\.jpg/, '_4f.jpg')
+                      .replace(/_3t\.jpg/, '_3f.jpg')
+                      .replace(/_3s\.jpg/, '_3f.jpg');
+        }
         
         // UI Elements
         const tabsContainer = document.getElementById('day-tabs');
@@ -113,7 +145,7 @@
         function initSkeletons() {
             skeletonGrid.innerHTML = Array(10).fill().map(() => `
                 <div class="rounded-xl overflow-hidden bg-slate-900 border border-slate-800 flex flex-col h-full animate-pulse">
-                    <div class="aspect-[3/4] bg-slate-800/50 w-full"></div>
+                    <div class="drama-poster-container bg-slate-800/50"></div>
                     <div class="p-4 flex-1 flex flex-col">
                         <div class="h-5 bg-slate-800/80 rounded w-3/4 mb-3"></div>
                         <div class="h-3 bg-slate-800/50 rounded w-1/2 mb-2"></div>
@@ -174,12 +206,12 @@
 
             dramaGrid.innerHTML = dramas.map(drama => `
                 <a href="${drama.url}" target="_blank" rel="noopener noreferrer" 
-                   class="group flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-cyan-500/50 hover:shadow-xl hover:shadow-cyan-500/10 hover:-translate-y-1 transition-all duration-300">
+                   class="drama-card group flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-cyan-500/50 hover:shadow-xl hover:shadow-cyan-500/10 hover:-translate-y-1 transition-all duration-300">
                     
-                    <div class="relative aspect-[3/4] overflow-hidden bg-slate-800">
+                    <div class="drama-poster-container">
                         ${drama.image ? 
-                            `<img src="${drama.image}" alt="${drama.title}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />` : 
-                            `<div class="w-full h-full flex items-center justify-center text-slate-600">
+                            `<img src="${upgradeImageUrl(drama.image)}" alt="${drama.title}" loading="lazy" />` : 
+                            `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#1e293b;" class="text-slate-600">
                                 <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                 </svg>
