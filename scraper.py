@@ -886,3 +886,88 @@ class MyDramaListScraper:
             "url": base_rec_url,
             "pages_fetched": page
         }
+
+    async def get_airing_calendar(self) -> Optional[Dict[str, Any]]:
+        """Get currently airing dramas grouped by day of the week"""
+        calendar_url = f"{self.base_url}/calendar"
+        soup = await self._make_request(calendar_url)
+        
+        if not soup:
+            return None
+
+        try:
+            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            calendar_data = {day: [] for day in days}
+            total_dramas = 0
+
+            # The page uses <h2> tags for each day, followed by a <div class="row"> containing the dramas
+            for day in days:
+                day_header = soup.find('h2', string=day)
+                if not day_header:
+                    continue
+                
+                # Note: The static HTML might contain all days, or only today if loaded via JS.
+                # Here we parse whatever is available in the static HTML.
+                dramas_container = day_header.find_next_sibling('div', class_='row')
+                if not dramas_container:
+                    continue
+                    
+                drama_items = dramas_container.select('.col-md-6, .col-lg-6')
+                for item in drama_items:
+                    try:
+                        # Extract title and URL
+                        title_elem = item.select_one('a.text-primary._600')
+                        title = title_elem.get_text(strip=True) if title_elem else ''
+                        
+                        # Use the cover image link for the base drama URL and slug
+                        cover_link = item.select_one('.cover-sm a')
+                        link = cover_link['href'] if cover_link else ''
+                        slug = link.split('/')[-1] if link else ''
+                        url = f"{self.base_url}{link}" if link else ''
+                        
+                        # Extract image
+                        img_elem = item.select_one('img.img-responsive')
+                        image = (img_elem.get('src') or img_elem.get('data-src') or '') if img_elem else ''
+                        
+                        # Extract episode number
+                        ep_elem = item.select_one('.text-sm')
+                        episode = ep_elem.get_text(strip=True) if ep_elem else ''
+                        
+                        # Extract air time. Strip the extra info icon text if present
+                        time_elem = item.select_one('.release-time')
+                        air_time = ''
+                        if time_elem:
+                            air_time = time_elem.get_text(" ", strip=True)
+                            
+                        # Extract network if available (it might be in .calendar-popover-title or similar)
+                        network_elem = item.select_one('.calendar-popover-title')
+                        network = network_elem.get_text(strip=True) if network_elem else ''
+                        
+                        # Try to extract rating (though it may not be present in calendar view)
+                        rating_elem = item.select_one('.score')
+                        rating = rating_elem.get_text(strip=True) if rating_elem else ''
+                        
+                        if title:
+                            calendar_data[day].append({
+                                'title': title,
+                                'slug': slug,
+                                'url': url,
+                                'image': image,
+                                'rating': rating,
+                                'episode': episode,
+                                'air_time': air_time,
+                                'network': network
+                            })
+                            total_dramas += 1
+                    except Exception as e:
+                        logger.error(f"Error parsing calendar drama item: {str(e)}")
+                        continue
+
+            return {
+                "days": calendar_data,
+                "total": total_dramas,
+                "url": calendar_url
+            }
+        except Exception as e:
+            logger.error(f"Error parsing airing calendar: {str(e)}")
+            return None

@@ -32,6 +32,10 @@ tags_metadata = [
         "description": "Person profiles, seasonal charts, user-created lists, and watchlists.",
     },
     {
+        "name": "Calendar",
+        "description": "Currently airing dramas grouped by day of the week.",
+    },
+    {
         "name": "Utility",
         "description": "Health check and diagnostics.",
     },
@@ -360,6 +364,28 @@ async def get_user_drama_list(user_id: str):
                 status_code=400,
                 content={"code": 400, "error": True, "description": {"title": "This list is private."}}
             )
+        raise HTTPException(
+            status_code=500,
+            detail={"code": 500, "error": True, "description": "Internal server error"}
+        )
+
+@app.get("/api/calendar", tags=["Calendar"],
+         summary="Get airing calendar",
+         description="Returns currently airing dramas grouped by day of the week (Monday-Sunday).")
+async def get_airing_calendar():
+    """Get currently airing dramas from the calendar."""
+    try:
+        logger.info("Getting airing calendar")
+        await asyncio.sleep(1)  # Rate limiting
+        calendar_data = await scraper.get_airing_calendar()
+        if not calendar_data:
+            return JSONResponse(
+                status_code=404,
+                content={"code": 404, "error": True, "description": "404 Not Found"}
+            )
+        return calendar_data
+    except Exception as e:
+        logger.error(f"Error getting airing calendar: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail={"code": 500, "error": True, "description": "Internal server error"}
