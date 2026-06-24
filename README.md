@@ -10,10 +10,12 @@ A serverless FastAPI-based web scraper for MyDramaList.com, designed for deploym
 
 ## 🚀 Features
 
-- **11 Endpoints** — Search, details, cast, episodes (list / single / enriched-all), reviews, recommendations, people, seasonal, lists, user watchlists
+- **13 Endpoints** — Search, details, cast, episodes (list / single / enriched-all), reviews, recommendations, people, seasonal, lists, user watchlists, airing calendar, plus health check
+- **Interactive Dashboards** — Includes interactive API docs UI (`/static/index.html`) and a live drama calendar (`/static/calendar.html`)
 - **Episode Deep Scraping** — Visits each `/episode/{n}` page to extract description, cover image, rating, and season
 - **Concurrent Fetching** — `episodes/all` batches requests (4 at a time) with anti-ban delays
 - **Serverless Ready** — Optimized for Vercel deployment
+- **Caching Mechanisms** — In-memory caching for airing calendar to prevent anti-ban limits (1-hour TTL)
 - **Rate Limiting** — Built-in 1 s delay per endpoint call; 0.5 s pause between episode batches
 - **Error Handling** — Consistent JSON error responses with proper HTTP status codes
 - **Modular Design** — Separate `scraper.py` for all scraping logic
@@ -53,6 +55,12 @@ A serverless FastAPI-based web scraper for MyDramaList.com, designed for deploym
 | GET | `/api/seasonal/{year}/{quarter}` | Top dramas for a season (quarter: `1`=Winter `2`=Spring `3`=Summer `4`=Fall) |
 | GET | `/api/list/{id}` | Items in a user-created public list |
 | GET | `/api/dramalist/{user_id}` | A user's public watchlist |
+
+### 📅 Calendar
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/calendar` | Get currently airing dramas grouped by day of the week (Monday–Sunday) |
 
 ### ⚙️ Utility
 
@@ -147,6 +155,34 @@ A serverless FastAPI-based web scraper for MyDramaList.com, designed for deploym
 }
 ```
 
+### `GET /api/calendar` — Airing Calendar
+```json
+{
+  "days": {
+    "Monday": [
+      {
+        "title": "Scent of the Wind",
+        "slug": "785294-kaze-kaoru",
+        "url": "https://mydramalist.com/785294-kaze-kaoru",
+        "image": "https://i.mydramalist.com/l0bepx_4t.jpg",
+        "rating": "",
+        "episode": "Episode 66",
+        "air_time": "04:30 AM",
+        "network": "Asia/Tokyo"
+      }
+    ],
+    "Tuesday": [],
+    "Wednesday": [],
+    "Thursday": [],
+    "Friday": [],
+    "Saturday": [],
+    "Sunday": []
+  },
+  "total": 413,
+  "url": "https://mydramalist.com/calendar"
+}
+```
+
 ### Error Response
 ```json
 {
@@ -179,6 +215,7 @@ project_root/
 ├── requirements.txt     # Dependencies
 ├── vercel.json          # Vercel serverless config
 ├── static/
+│   ├── calendar.html    # Airing calendar dashboard UI
 │   └── index.html       # Interactive API docs UI
 └── README.md
 ```
@@ -205,6 +242,7 @@ project_root/
 
 4. **Access**:
    - Custom UI Docs: http://localhost:9000
+   - Airing Calendar UI: http://localhost:9000/static/calendar.html
    - Swagger UI:     http://localhost:9000/docs
    - ReDoc:          http://localhost:9000/redoc
    - Health Check:   http://localhost:9000/api/health
@@ -243,6 +281,11 @@ Or use the one-click button at the top of this README.
 ### Rate Limiting
 - 1 s delay on every endpoint entry
 - 0.5 s pause between episode batch groups
+
+### Calendar Caching
+- To optimize execution times and avoid aggressive scraping, `/api/calendar` caching is built-in.
+- Data is cached in memory for **1 hour (3600 seconds)**.
+- Responses will contain headers `X-Cache: HIT` (with `X-Cache-Age` in seconds) or `X-Cache: MISS` to indicate status.
 
 ---
 

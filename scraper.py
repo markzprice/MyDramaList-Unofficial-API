@@ -19,26 +19,29 @@ class MyDramaListScraper:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
+        self._session = None
 
+    async def _get_session(self) -> AsyncSession:
+        if self._session is None:
+            self._session = AsyncSession(impersonate="chrome110")
+        return self._session
 
-    async def _make_request(self, url: str) -> Optional[BeautifulSoup]:
+    async def _make_request(self, url: str) -> BeautifulSoup:
         """Make HTTP request and return BeautifulSoup object"""
         try:
-            async with AsyncSession(impersonate="chrome110") as session:
-                response = await session.get(url, timeout=10)
-                response.raise_for_status()
-                return BeautifulSoup(response.content, 'html.parser')
+            session = await self._get_session()
+            response = await session.get(url, timeout=10)
+            response.raise_for_status()
+            return BeautifulSoup(response.content, 'html.parser')
         except Exception as e:
             logger.error(f"Request failed for {url}: {str(e)}")
-            return None
+            raise
 
     async def search_dramas(self, query: str) -> Dict[str, Any]:
         """Search for dramas by query"""
         search_url = f"{self.base_url}/search?q={quote(query)}"
         soup = await self._make_request(search_url)
         
-        if not soup:
-            return {"results": [], "total": 0}
 
         results = []
         drama_items = soup.find_all('div', class_='box')
@@ -100,8 +103,6 @@ class MyDramaListScraper:
         drama_url = f"{self.base_url}/{slug}"
         soup = await self._make_request(drama_url)
         
-        if not soup:
-            return None
 
         try:
             details = {'slug': slug, 'url': drama_url}
@@ -194,8 +195,6 @@ class MyDramaListScraper:
         cast_url = f"{self.base_url}/{slug}/cast"
         soup = await self._make_request(cast_url)
         
-        if not soup:
-            return None
 
         cast_by_role = {}
         try:
@@ -256,8 +255,6 @@ class MyDramaListScraper:
         episodes_url = f"{self.base_url}/{slug}/episodes"
         soup = await self._make_request(episodes_url)
         
-        if not soup:
-            return None
 
         try:
             episodes = []
@@ -298,8 +295,6 @@ class MyDramaListScraper:
         episode_url = f"{self.base_url}/{slug}/episode/{episode_number}"
         soup = await self._make_request(episode_url)
 
-        if not soup:
-            return None
 
         try:
             data: Dict[str, Any] = {
@@ -384,8 +379,6 @@ class MyDramaListScraper:
         episodes_url = f"{self.base_url}/{slug}/episodes"
         soup = await self._make_request(episodes_url)
 
-        if not soup:
-            return None
 
         try:
             base_episodes = []
@@ -470,8 +463,6 @@ class MyDramaListScraper:
         reviews_url = f"{self.base_url}/{slug}/reviews"
         soup = await self._make_request(reviews_url)
         
-        if not soup:
-            return None
 
         try:
             reviews = []
@@ -512,8 +503,6 @@ class MyDramaListScraper:
         person_url = f"{self.base_url}/people/{people_id}"
         soup = await self._make_request(person_url)
         
-        if not soup:
-            return None
 
         try:
             data = {'id': people_id, 'url': person_url}
@@ -584,8 +573,6 @@ class MyDramaListScraper:
         seasonal_url = f"{self.base_url}/shows/top?year={year}&season={season}"
         soup = await self._make_request(seasonal_url)
         
-        if not soup:
-            return {"dramas": [], "total": 0, "year": year, "quarter": quarter}
 
         try:
             dramas = []
@@ -635,8 +622,6 @@ class MyDramaListScraper:
         list_url = f"{self.base_url}/list/{list_id}"
         soup = await self._make_request(list_url)
         
-        if not soup:
-            return None
 
         try:
             if soup.select_one('.alert-danger') and 'private' in soup.select_one('.alert-danger').text.lower():
@@ -653,12 +638,12 @@ class MyDramaListScraper:
             
             for item in drama_items:
                 try:
-                    title_elem = item.select_one('h2.title > a')
-                    if not title_elem:
+                    drama_title_elem = item.select_one('h2.title > a')
+                    if not drama_title_elem:
                         continue
                     
-                    drama_title = title_elem.get_text(strip=True)
-                    link = title_elem['href']
+                    drama_title = drama_title_elem.get_text(strip=True)
+                    link = drama_title_elem['href']
                     slug = link.split('/')[-1] if link else ''
                     
                     img_elem = item.find('img', class_='lazy')
@@ -692,8 +677,6 @@ class MyDramaListScraper:
         user_list_url = f"{self.base_url}/dramalist/{user_id}"
         soup = await self._make_request(user_list_url)
         
-        if not soup:
-            return None
 
         try:
             if "This user's list is private." in soup.get_text():
@@ -766,16 +749,11 @@ class MyDramaListScraper:
         while True:
             rec_url = f"{base_rec_url}?page={page}" if page > 1 else base_rec_url
             soup = await self._make_request(rec_url)
-            if not soup:
-                break
             
             # Updated selector for recommendation items
             rec_items = soup.select("div.box-body.b-t")
             if not rec_items:
-                # Fallback check if no items found with b-t class
-                rec_items = soup.select("div.box:has(b a)")
-                if not rec_items:
-                    break
+                break
                 
             page_recs_found = 0
             for item in rec_items:
@@ -892,8 +870,6 @@ class MyDramaListScraper:
         calendar_url = f"{self.base_url}/calendar"
         soup = await self._make_request(calendar_url)
         
-        if not soup:
-            return None
 
         try:
             days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -902,7 +878,7 @@ class MyDramaListScraper:
 
             # The page uses <h2> tags for each day, followed by a <div class="row"> containing the dramas
             for day in days:
-                day_header = soup.find('h2', string=day)
+                day_header = soup.find('h2', string=lambda t: t and day in t)
                 if not day_header:
                     continue
                 
