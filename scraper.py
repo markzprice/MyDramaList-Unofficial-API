@@ -19,26 +19,29 @@ class MyDramaListScraper:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
+        self._session = None
 
+    async def _get_session(self) -> AsyncSession:
+        if self._session is None:
+            self._session = AsyncSession(impersonate="chrome110")
+        return self._session
 
-    async def _make_request(self, url: str) -> Optional[BeautifulSoup]:
+    async def _make_request(self, url: str) -> BeautifulSoup:
         """Make HTTP request and return BeautifulSoup object"""
         try:
-            async with AsyncSession(impersonate="chrome110") as session:
-                response = await session.get(url, timeout=10)
-                response.raise_for_status()
-                return BeautifulSoup(response.content, 'html.parser')
+            session = await self._get_session()
+            response = await session.get(url, timeout=10)
+            response.raise_for_status()
+            return BeautifulSoup(response.content, 'html.parser')
         except Exception as e:
             logger.error(f"Request failed for {url}: {str(e)}")
-            return None
+            raise
 
     async def search_dramas(self, query: str) -> Dict[str, Any]:
         """Search for dramas by query"""
         search_url = f"{self.base_url}/search?q={quote(query)}"
         soup = await self._make_request(search_url)
         
-        if not soup:
-            return {"results": [], "total": 0}
 
         results = []
         drama_items = soup.find_all('div', class_='box')
@@ -100,8 +103,6 @@ class MyDramaListScraper:
         drama_url = f"{self.base_url}/{slug}"
         soup = await self._make_request(drama_url)
         
-        if not soup:
-            return None
 
         try:
             details = {'slug': slug, 'url': drama_url}
@@ -182,7 +183,7 @@ class MyDramaListScraper:
 
         except Exception as e:
             logger.error(f"Error parsing drama details for '{slug}': {str(e)}")
-            return None
+            raise
 
     async def get_drama_cast(self, slug: str) -> Optional[Dict[str, Any]]:
         """Get cast information for a drama by slug (or title)"""
@@ -194,8 +195,6 @@ class MyDramaListScraper:
         cast_url = f"{self.base_url}/{slug}/cast"
         soup = await self._make_request(cast_url)
         
-        if not soup:
-            return None
 
         cast_by_role = {}
         try:
@@ -244,7 +243,7 @@ class MyDramaListScraper:
             return {'cast': cast_by_role, 'total': total_cast}
         except Exception as e:
             logger.error(f"Error parsing cast page: {str(e)}")
-            return None
+            raise
 
     async def get_drama_episodes(self, slug: str) -> Optional[Dict[str, Any]]:
         """Get episode details for a drama by slug (or title)"""
@@ -256,8 +255,6 @@ class MyDramaListScraper:
         episodes_url = f"{self.base_url}/{slug}/episodes"
         soup = await self._make_request(episodes_url)
         
-        if not soup:
-            return None
 
         try:
             episodes = []
@@ -286,7 +283,7 @@ class MyDramaListScraper:
             return {'episodes': episodes, 'total': len(episodes)}
         except Exception as e:
             logger.error(f"Error parsing episodes: {str(e)}")
-            return None
+            raise
 
     async def get_episode_details(self, slug: str, episode_number: int) -> Optional[Dict[str, Any]]:
         """Get details for a single episode (description + cover image) from /episode/{n}"""
@@ -298,8 +295,6 @@ class MyDramaListScraper:
         episode_url = f"{self.base_url}/{slug}/episode/{episode_number}"
         soup = await self._make_request(episode_url)
 
-        if not soup:
-            return None
 
         try:
             data: Dict[str, Any] = {
@@ -367,7 +362,7 @@ class MyDramaListScraper:
             return data
         except Exception as e:
             logger.error(f"Error parsing episode {episode_number} for '{slug}': {str(e)}")
-            return None
+            raise
 
     async def get_drama_episodes_all(self, slug: str) -> Optional[Dict[str, Any]]:
         """
@@ -384,8 +379,6 @@ class MyDramaListScraper:
         episodes_url = f"{self.base_url}/{slug}/episodes"
         soup = await self._make_request(episodes_url)
 
-        if not soup:
-            return None
 
         try:
             base_episodes = []
@@ -470,8 +463,6 @@ class MyDramaListScraper:
         reviews_url = f"{self.base_url}/{slug}/reviews"
         soup = await self._make_request(reviews_url)
         
-        if not soup:
-            return None
 
         try:
             reviews = []
@@ -505,15 +496,13 @@ class MyDramaListScraper:
             return {'reviews': reviews, 'total': len(reviews)}
         except Exception as e:
             logger.error(f"Error parsing reviews: {str(e)}")
-            return None
+            raise
 
     async def get_person_details(self, people_id: str) -> Optional[Dict[str, Any]]:
         """Get person details by ID"""
         person_url = f"{self.base_url}/people/{people_id}"
         soup = await self._make_request(person_url)
         
-        if not soup:
-            return None
 
         try:
             data = {'id': people_id, 'url': person_url}
@@ -584,8 +573,6 @@ class MyDramaListScraper:
         seasonal_url = f"{self.base_url}/shows/top?year={year}&season={season}"
         soup = await self._make_request(seasonal_url)
         
-        if not soup:
-            return {"dramas": [], "total": 0, "year": year, "quarter": quarter}
 
         try:
             dramas = []
@@ -635,8 +622,6 @@ class MyDramaListScraper:
         list_url = f"{self.base_url}/list/{list_id}"
         soup = await self._make_request(list_url)
         
-        if not soup:
-            return None
 
         try:
             if soup.select_one('.alert-danger') and 'private' in soup.select_one('.alert-danger').text.lower():
@@ -653,12 +638,12 @@ class MyDramaListScraper:
             
             for item in drama_items:
                 try:
-                    title_elem = item.select_one('h2.title > a')
-                    if not title_elem:
+                    drama_title_elem = item.select_one('h2.title > a')
+                    if not drama_title_elem:
                         continue
                     
-                    drama_title = title_elem.get_text(strip=True)
-                    link = title_elem['href']
+                    drama_title = drama_title_elem.get_text(strip=True)
+                    link = drama_title_elem['href']
                     slug = link.split('/')[-1] if link else ''
                     
                     img_elem = item.find('img', class_='lazy')
@@ -692,8 +677,6 @@ class MyDramaListScraper:
         user_list_url = f"{self.base_url}/dramalist/{user_id}"
         soup = await self._make_request(user_list_url)
         
-        if not soup:
-            return None
 
         try:
             if "This user's list is private." in soup.get_text():
@@ -766,16 +749,11 @@ class MyDramaListScraper:
         while True:
             rec_url = f"{base_rec_url}?page={page}" if page > 1 else base_rec_url
             soup = await self._make_request(rec_url)
-            if not soup:
-                break
             
             # Updated selector for recommendation items
             rec_items = soup.select("div.box-body.b-t")
             if not rec_items:
-                # Fallback check if no items found with b-t class
-                rec_items = soup.select("div.box:has(b a)")
-                if not rec_items:
-                    break
+                break
                 
             page_recs_found = 0
             for item in rec_items:
@@ -886,3 +864,86 @@ class MyDramaListScraper:
             "url": base_rec_url,
             "pages_fetched": page
         }
+
+    async def get_airing_calendar(self) -> Optional[Dict[str, Any]]:
+        """Get currently airing dramas grouped by day of the week"""
+        calendar_url = f"{self.base_url}/calendar"
+        soup = await self._make_request(calendar_url)
+        
+
+        try:
+            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            calendar_data = {day: [] for day in days}
+            total_dramas = 0
+
+            # The page uses <h2> tags for each day, followed by a <div class="row"> containing the dramas
+            for day in days:
+                day_header = soup.find('h2', string=lambda t: t and day in t)
+                if not day_header:
+                    continue
+                
+                # Note: The static HTML might contain all days, or only today if loaded via JS.
+                # Here we parse whatever is available in the static HTML.
+                dramas_container = day_header.find_next_sibling('div', class_='row')
+                if not dramas_container:
+                    continue
+                    
+                drama_items = dramas_container.select('.col-md-6, .col-lg-6')
+                for item in drama_items:
+                    try:
+                        # Extract title and URL
+                        title_elem = item.select_one('a.text-primary._600')
+                        title = title_elem.get_text(strip=True) if title_elem else ''
+                        
+                        # Use the cover image link for the base drama URL and slug
+                        cover_link = item.select_one('.cover-sm a')
+                        link = cover_link['href'] if cover_link else ''
+                        slug = link.split('/')[-1] if link else ''
+                        url = f"{self.base_url}{link}" if link else ''
+                        
+                        # Extract image
+                        img_elem = item.select_one('img.img-responsive')
+                        image = (img_elem.get('src') or img_elem.get('data-src') or '') if img_elem else ''
+                        
+                        # Extract episode number
+                        ep_elem = item.select_one('.text-sm')
+                        episode = ep_elem.get_text(strip=True) if ep_elem else ''
+                        
+                        # Extract air time. Strip the extra info icon text if present
+                        time_elem = item.select_one('.release-time')
+                        air_time = ''
+                        if time_elem:
+                            air_time = time_elem.get_text(" ", strip=True)
+                            
+                        # Extract network if available (it might be in .calendar-popover-title or similar)
+                        network_elem = item.select_one('.calendar-popover-title')
+                        network = network_elem.get_text(strip=True) if network_elem else ''
+                        
+                        # Try to extract rating (though it may not be present in calendar view)
+                        rating_elem = item.select_one('.score')
+                        rating = rating_elem.get_text(strip=True) if rating_elem else ''
+                        
+                        if title:
+                            calendar_data[day].append({
+                                'title': title,
+                                'slug': slug,
+                                'url': url,
+                                'image': image,
+                                'rating': rating,
+                                'episode': episode,
+                                'air_time': air_time,
+                                'network': network
+                            })
+                            total_dramas += 1
+                    except Exception as e:
+                        logger.error(f"Error parsing calendar drama item: {str(e)}")
+                        continue
+
+            return {
+                "days": calendar_data,
+                "total": total_dramas,
+                "url": calendar_url
+            }
+        except Exception as e:
+            logger.error(f"Error parsing airing calendar: {str(e)}")
+            return None
