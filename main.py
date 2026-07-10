@@ -415,6 +415,19 @@ async def get_airing_calendar():
             detail={"code": 500, "error": True, "description": "Internal server error"}
         )
 
+# --- TEMPORARY DEBUG ENDPOINT (Brenda, 2026-07-09) -------------------------
+# Purpose: inspect MyDramaList's live markup from a machine that isn't
+# Cloudflare-challenged, so the filmography/photos selectors can be written
+# against the real DOM instead of guessed. REMOVED in the very next commit.
+@app.get("/api/debug/html", include_in_schema=False)
+async def _debug_html(path: str, sel: str = "", n: int = 3, chars: int = 1500):
+    soup = await scraper._make_request(f"https://mydramalist.com{path}")
+    if not sel:
+        return {"title": soup.title.get_text() if soup.title else "", "len": len(str(soup))}
+    els = soup.select(sel)
+    return {"count": len(els), "html": [str(e)[:chars] for e in els[:n]]}
+# --- END TEMPORARY DEBUG ENDPOINT ------------------------------------------
+
 # Health check endpoint
 @app.get("/api/health", tags=["Utility"], summary="Health check")
 async def health_check():
