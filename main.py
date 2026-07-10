@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+import hmac
 import logging
 import asyncio
+import os
 from scraper import MyDramaListScraper
 import time
 
@@ -95,6 +97,35 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize scraper
 scraper = MyDramaListScraper()
+
+# --- Optional API key ------------------------------------------------------
+# A self-hosted deployment is a public URL, and every request it serves costs
+# the owner a scrape against MyDramaList. Setting MDL_API_KEY in the
+# environment locks /api/* behind an `x-api-key` header.
+#
+# If MDL_API_KEY is unset the guard is a no-op, so existing deployments (and
+# anyone running this locally) keep working exactly as before — the lock is
+# opt-in, not a breaking change.
+#
+# /api/health stays open on purpose: uptime checks shouldn't need a secret,
+# and it reveals nothing.
+API_KEY = os.environ.get("MDL_API_KEY", "").strip()
+OPEN_PATHS = {"/api/health"}
+
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    path = request.url.path
+    if API_KEY and path.startswith("/api/") and path not in OPEN_PATHS:
+        supplied = request.headers.get("x-api-key", "")
+        # compare_digest: don't leak the key one byte at a time via timing.
+        if not hmac.compare_digest(supplied, API_KEY):
+            return JSONResponse(
+                status_code=401,
+                content={"code": 401, "error": True,
+                         "description": "Missing or invalid x-api-key header"},
+            )
+    return await call_next(request)
 
 @app.get("/")
 async def root():
@@ -298,6 +329,31 @@ async def get_person_details(people_id: str):
             detail={"code": 500, "error": True, "description": "Internal server error"}
         )
 
+@app.get("/api/people/{people_id}/photos", tags=["People & Lists"],
+         summary="Get person photos",
+         description="Returns up to `limit` (default 12) full-size photos from a person's photo gallery, each with its thumbnail and gallery page URL.")
+async def get_person_photos(people_id: str, limit: int = 12):
+    """Get a person's gallery photos by slug (e.g. 15843-li-yu-jie)."""
+    try:
+        logger.info(f"Getting person photos for: {people_id}")
+        await asyncio.sleep(1)  # Rate limiting
+        # Clamp: `limit` is user input and each photo is only a URL, but an
+        # unbounded value invites a caller to ask for a person's entire gallery.
+        limit = max(1, min(limit, 60))
+        photos = await scraper.get_person_photos(people_id, limit=limit)
+        if not photos:
+            return JSONResponse(
+                status_code=404,
+                content={"code": 404, "error": True, "description": "404 Not Found"}
+            )
+        return photos
+    except Exception as e:
+        logger.error(f"Error getting person photos: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": 500, "error": True, "description": "Internal server error"}
+        )
+
 @app.get("/api/seasonal/{year}/{quarter}", tags=["People & Lists"],
          summary="Get seasonal dramas",
          description="Returns the top dramas for a specific year and quarter. Quarter values: `1`=Winter, `2`=Spring, `3`=Summer, `4`=Fall. Example: `/api/seasonal/2023/4`")
@@ -414,19 +470,6 @@ async def get_airing_calendar():
             status_code=500,
             detail={"code": 500, "error": True, "description": "Internal server error"}
         )
-
-# --- TEMPORARY DEBUG ENDPOINT (Brenda, 2026-07-09) -------------------------
-# Purpose: inspect MyDramaList's live markup from a machine that isn't
-# Cloudflare-challenged, so the filmography/photos selectors can be written
-# against the real DOM instead of guessed. REMOVED in the very next commit.
-@app.get("/api/debug/html", include_in_schema=False)
-async def _debug_html(path: str, sel: str = "", n: int = 3, chars: int = 1500):
-    soup = await scraper._make_request(f"https://mydramalist.com{path}")
-    if not sel:
-        return {"title": soup.title.get_text() if soup.title else "", "len": len(str(soup))}
-    els = soup.select(sel)
-    return {"count": len(els), "html": [str(e)[:chars] for e in els[:n]]}
-# --- END TEMPORARY DEBUG ENDPOINT ------------------------------------------
 
 # Health check endpoint
 @app.get("/api/health", tags=["Utility"], summary="Health check")
