@@ -612,7 +612,24 @@ class MyDramaListScraper:
                         entry['rating'] = rating_div.get_text(strip=True) if rating_div else 'N/A'
                         
                         entries.append(entry)
-                    filmography[category] = entries
+                    # MDL renders MORE THAN ONE box under the same heading for some
+                    # people. Yang Mie Mie (id 133713) has two "Drama" boxes: the main
+                    # one with ~46 credits, then a second holding a single credit.
+                    # `filmography[category] = entries` let the later box CLOBBER the
+                    # earlier one, so the API reported 1 drama for her and silently
+                    # dropped the other 46 — the consumer had no way to tell. Merge the
+                    # boxes instead, skipping any row whose slug is already recorded for
+                    # this category so a genuine MDL repeat cannot double-count.
+                    # (Patched 2026-07-14.)
+                    bucket = filmography.setdefault(category, [])
+                    seen = {e['slug'] for e in bucket if e.get('slug')}
+                    for entry in entries:
+                        slug = entry.get('slug')
+                        if slug and slug in seen:
+                            continue
+                        if slug:
+                            seen.add(slug)
+                        bucket.append(entry)
             data['filmography'] = filmography
 
             return data
